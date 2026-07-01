@@ -1,0 +1,12 @@
+# Render Blueprint — free Docker web service. New → Blueprint → this repo → Apply.
+services:
+  - type: web
+    name: viral-app-lab-frames
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: WORKER_SECRET
+        generateValue: true
