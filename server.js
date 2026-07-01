@@ -44,6 +44,37 @@ function run(cmd, args, timeoutMs) {
   });
 }
 
+/** Transcribe the video's audio via Groq Whisper (free tier) if a key is set. */
+async function transcribe(mp4, dir) {
+  const key = (process.env.GROQ_API_KEY || "").trim();
+  if (!key) return null;
+  const audio = path.join(dir, "audio.mp3");
+  try {
+    await run(
+      FFMPEG,
+      ["-i", mp4, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", "-y", audio],
+      60000
+    );
+    const buf = await fs.readFile(audio);
+    const fd = new FormData();
+    fd.append("file", new Blob([buf], { type: "audio/mpeg" }), "audio.mp3");
+    fd.append("model", process.env.GROQ_WHISPER_MODEL || "whisper-large-v3-turbo");
+    fd.append("response_format", "text");
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 60000);
+    const r = await fetch(
+      "https://api.groq.com/openai/v1/audio/transcriptions",
+      { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: fd, signal: controller.signal }
+    );
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const text = (await r.text()).trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
 function hostAllowed(u) {
   try {
     const h = new URL(u).hostname.replace(/^www\./, "");
@@ -104,7 +135,7 @@ async function extract(url, maxFrames) {
         "-i",
         mp4,
         "-vf",
-        `fps=${fps.toFixed(4)},scale=512:-1`,
+        `fps=${fps.toFixed(4)},scale=768:-1`,
         "-frames:v",
         String(maxFrames),
         "-q:v",
@@ -120,7 +151,8 @@ async function extract(url, maxFrames) {
     for (const f of frameFiles) {
       frames.push((await fs.readFile(path.join(dir, f))).toString("base64"));
     }
-    return { frames, durationSec: Math.round(dur), frameCount: frames.length };
+    const transcript = await transcribe(mp4, dir);
+    return { frames, durationSec: Math.round(dur), frameCount: frames.length, transcript };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
@@ -148,7 +180,7 @@ const server = http.createServer((req, res) => {
           res.writeHead(400, { "content-type": "application/json" });
           return res.end(JSON.stringify({ error: "missing or unsupported url" }));
         }
-        const n = Math.min(Math.max(parseInt(maxFrames, 10) || 6, 1), 10);
+        const n = Math.min(Math.max(parseInt(maxFrames, 10) || 6, 1), 12);
         const result = await extract(url, n);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(result));
