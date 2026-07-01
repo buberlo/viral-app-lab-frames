@@ -62,10 +62,12 @@ async function transcribe(mp4, dir, reqKey) {
     fd.append("response_format", "text");
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 60000);
-    const r = await fetch(
-      "https://api.groq.com/openai/v1/audio/transcriptions",
-      { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: fd, signal: controller.signal }
-    );
+    const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+      body: fd,
+      signal: controller.signal,
+    });
     clearTimeout(t);
     if (!r.ok) return null;
     const text = (await r.text()).trim();
@@ -99,14 +101,18 @@ async function extract(url, maxFrames, groqKey) {
       YT_DLP,
       [
         url,
+        // Prefer a single file that already has audio (TikTok, progressive
+        // YouTube); otherwise merge best video+audio — so transcription has sound.
         "-f",
-        "mp4/best[height<=720]/best",
+        "b[height<=720]/bv*[height<=720]+ba/b",
+        "--merge-output-format",
+        "mp4",
         "--no-playlist",
         "--no-warnings",
         "-q",
         "--no-progress",
         "--max-filesize",
-        "100M",
+        "120M",
         "-o",
         out,
       ],
@@ -151,7 +157,7 @@ async function extract(url, maxFrames, groqKey) {
     for (const f of frameFiles) {
       frames.push((await fs.readFile(path.join(dir, f))).toString("base64"));
     }
-    const transcript = await transcribe(mp4, dir);
+    const transcript = await transcribe(mp4, dir, groqKey);
     return { frames, durationSec: Math.round(dur), frameCount: frames.length, transcript };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
