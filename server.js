@@ -45,8 +45,8 @@ function run(cmd, args, timeoutMs) {
 }
 
 /** Transcribe the video's audio via Groq Whisper (free tier) if a key is set. */
-async function transcribe(mp4, dir) {
-  const key = (process.env.GROQ_API_KEY || "").trim();
+async function transcribe(mp4, dir, reqKey) {
+  const key = ((reqKey || process.env.GROQ_API_KEY) || "").trim();
   if (!key) return null;
   const audio = path.join(dir, "audio.mp3");
   try {
@@ -91,7 +91,7 @@ function hostAllowed(u) {
   }
 }
 
-async function extract(url, maxFrames) {
+async function extract(url, maxFrames, groqKey) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fw-"));
   try {
     const out = path.join(dir, "v.%(ext)s");
@@ -175,13 +175,17 @@ const server = http.createServer((req, res) => {
     });
     req.on("end", async () => {
       try {
-        const { url, maxFrames } = JSON.parse(body || "{}");
+        const { url, maxFrames, groqKey } = JSON.parse(body || "{}");
         if (!url || !hostAllowed(url)) {
           res.writeHead(400, { "content-type": "application/json" });
           return res.end(JSON.stringify({ error: "missing or unsupported url" }));
         }
         const n = Math.min(Math.max(parseInt(maxFrames, 10) || 6, 1), 12);
-        const result = await extract(url, n);
+        const result = await extract(
+          url,
+          n,
+          typeof groqKey === "string" ? groqKey : undefined
+        );
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (e) {
