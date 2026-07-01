@@ -4,6 +4,7 @@ services:
     name: viral-app-lab-frames
     runtime: docker
     plan: free
+    autoDeploy: true
     region: oregon
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
