@@ -166,8 +166,17 @@ async function extract(url, maxFrames, groqKey) {
 
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && (req.url === "/" || req.url === "/health")) {
-    res.writeHead(200, { "content-type": "text/plain" });
-    return res.end("frame-worker ok");
+    // JSON so a deploy is verifiable with a cheap GET (no video download):
+    // `commit` is the deployed SHA — Render injects RENDER_GIT_COMMIT.
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(
+      JSON.stringify({
+        ok: true,
+        service: "frame-worker",
+        commit: (process.env.RENDER_GIT_COMMIT || "dev").slice(0, 7),
+        features: { transcribe: true, maxFrames: 12 },
+      })
+    );
   }
   if (req.method === "POST" && req.url === "/frames") {
     if (SECRET && req.headers["authorization"] !== `Bearer ${SECRET}`) {
